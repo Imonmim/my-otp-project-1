@@ -1,52 +1,19 @@
 const express = require('express');
-const crypto = require('crypto');
+const { TOTP } = require('otplib');
 const app = express();
-
-function base32tohex(base32) {
-    const base32chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
-    let bits = '';
-    let hex = '';
-    for (let i = 0; i < base32.length; i++) {
-        const val = base32chars.indexOf(base32.toUpperCase().charAt(i));
-        if (val === -1) continue;
-        bits += val.toString(2).padStart(5, '0');
-    }
-    for (let i = 0; i + 4 <= bits.length; i += 4) {
-        hex += parseInt(bits.substr(i, 4), 2).toString(16);
-    }
-    return hex;
-}
-
-function generateOTP(secret, windowOffset = 0) {
-    const cleanSecret = secret.replace(/\s+/g, '').toUpperCase();
-    const key = Buffer.from(base32tohex(cleanSecret), 'hex');
-    const time = Math.floor(Math.floor(Date.now() / 1000) / 30) + windowOffset;
-    
-    const timeBuffer = Buffer.alloc(8);
-    let tempTime = time;
-    for (let i = 7; i >= 0; i--) {
-        timeBuffer[i] = tempTime & 0xff;
-        tempTime = tempTime >> 8;
-    }
-    
-    const hmac = crypto.createHmac('sha1', key).update(timeBuffer).digest();
-    const offset = hmac[hmac.length - 1] & 0xf;
-    const code = ((hmac[offset] & 0x7f) << 24) |
-                 ((hmac[offset + 1] & 0xff) << 16) |
-                 ((hmac[offset + 2] & 0xff) << 8) |
-                 (hmac[offset + 3] & 0xff);
-    return (code % 1000000).toString().padStart(6, '0');
-}
 
 app.get('/otp', (req, res) => {
     const secret = req.query.secret;
     if (!secret) return res.status(400).send("Secret missing");
 
     try {
-        // সার্ভারের সময়ের ব্যবধান এড়াতে বর্তমান কোডের পাশাপাশি আগের ও পরের উইন্ডো চেক করা যেতে পারে 
-        // অথবা সরাসরি বর্তমান সঠিক কোডটি রিটার্ন করবে
-        const otp = generateOTP(secret, 0);
-        res.send(otp);
+        // স্পেস বা অতিরিক্ত ক্যারেক্টার ক্লিন করা
+        const cleanSecret = secret.replace(/\s+/g, '').toUpperCase();
+        
+        // otplib দিয়ে নিখুঁতভাবে আসল টু-এফএ কোড জেনারেট করা
+        const token = TOTP.generate(cleanSecret);
+        
+        res.send(token);
     } catch (err) {
         res.status(500).send("Error generating OTP");
     }
